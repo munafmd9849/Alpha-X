@@ -9,14 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements first for layer caching
-COPY requirements.txt .
-
-# Install Python dependencies
+# Copy from backend/ (build context = repo root when using backend/Dockerfile on Render)
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+COPY backend/ .
 
 # Expose port
 EXPOSE 8000

@@ -1,4 +1,4 @@
-# PharmaGuard - Root Dockerfile for Render (build context = repo root)
+# PharmaGuard - Build from repo root (requirements.txt at root)
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy from backend/ (repo root is build context on Render)
-COPY backend/requirements.txt .
+# requirements.txt at repo root
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
