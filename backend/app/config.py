@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     log_level: str = "info"
     max_file_size: int = 5_242_880  # 5MB
     rate_limit: int = 100
-    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000,https://alphafrontend-lilac.vercel.app"
 
     @property
     def origins_list(self) -> List[str]:
