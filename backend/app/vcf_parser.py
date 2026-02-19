@@ -139,6 +139,20 @@ def _normalize_chrom(chrom: str) -> str:
     return chrom
 
 
+def _safe_scalar(obj, default: str = "") -> str:
+    """Safely get string from variant field (REF, ID, etc.) avoiding numpy array truth value errors."""
+    if obj is None:
+        return default
+    try:
+        if hasattr(obj, "size"):
+            sz = getattr(obj, "size", -1)
+            if sz == 0 or (hasattr(sz, "__bool__") and not sz):
+                return default
+    except (ValueError, TypeError):
+        return default
+    return str(obj)
+
+
 def _decompress_if_gzipped(content: bytes) -> bytes:
     """Decompress gzipped content."""
     if len(content) >= 2 and content[:2] == b"\x1f\x8b":
@@ -246,113 +260,135 @@ def parse_vcf(
         position_based_count = 0
 
         for variant in vcf:
-            chrom = _normalize_chrom(variant.CHROM)
-            pos = int(variant.POS)
-            ref = str(variant.REF or "")
-            alts_raw = variant.ALT
-            if alts_raw is None:
-                alts = []
-            elif isinstance(alts_raw, (list, tuple)):
-                alts = [str(a) for a in alts_raw]
-            else:
-                alts = [str(alts_raw)]
-            info = variant.INFO or {}
-
-            # Scenario 4: Structural variants - SVTYPE, CN, CNV in INFO
-            svtype = info.get("SVTYPE")
-            cn_val = info.get("CN") or info.get("CNV")
-            if cn_val is not None and (svtype or gene_at_position(chrom, pos) == "CYP2D6"):
-                cn = int(cn_val) if isinstance(cn_val, (int, float)) else 0
-                result.cnv_by_gene["CYP2D6"] = CNVResult(
-                    gene="CYP2D6", copy_number=cn, confidence="explicit"
-                )
-
-            # Check FORMAT for CN/CNV
             try:
-                fmt = variant.FORMAT or ""
-                if "CN" in fmt or "CNV" in fmt:
-                    cn_fmt = variant.format("CN") if "CN" in fmt else variant.format("CNV")
-                    if cn_fmt is not None and cn_fmt.size > 0:
-                        cn = int(cn_fmt.flat[0])
-                        gene = _parse_info_gene(str(info)) or gene_at_position(chrom, pos)
-                        if gene == "CYP2D6":
-                            result.cnv_by_gene["CYP2D6"] = CNVResult(
-                                gene="CYP2D6", copy_number=cn, confidence="explicit"
+                chrom = _normalize_chrom(variant.CHROM)
+                pos = int(variant.POS)
+                ref = _safe_scalar(variant.REF)
+                alts_raw = variant.ALT
+                if alts_raw is None or (hasattr(alts_raw, "size") and getattr(alts_raw, "size", 1) == 0):
+                    alts = []
+                elif isinstance(alts_raw, (list, tuple)):
+                    alts = [str(a) for a in alts_raw] if len(alts_raw) > 0 else []
+                else:
+                    alts = [str(alts_raw)] if not (hasattr(alts_raw, "size") and getattr(alts_raw, "size", 1) == 0) else []
+                info = variant.INFO
+                if info is None or (hasattr(info, "size") and info.size == 0):
+                    info = {}
+
+                # Scenario 4: Structural variants - SVTYPE, CN, CNV in INFO
+                svtype = info.get("SVTYPE")
+                cn_val = info.get("CN")
+                if cn_val is None or (hasattr(cn_val, "size") and cn_val.size == 0):
+                    cn_val = info.get("CNV")
+                try:
+                    _has_cn = cn_val is not None and not (hasattr(cn_val, "size") and cn_val.size == 0)
+                    _has_sv = svtype is not None and not (hasattr(svtype, "size") and svtype.size == 0)
+                except (ValueError, TypeError):
+                    _has_cn = cn_val is not None
+                    _has_sv = svtype is not None
+                if _has_cn and (_has_sv or gene_at_position(chrom, pos) == "CYP2D6"):
+                    cn = int(cn_val) if isinstance(cn_val, (int, float)) else 0
+                    result.cnv_by_gene["CYP2D6"] = CNVResult(
+                        gene="CYP2D6", copy_number=cn, confidence="explicit"
+                    )
+
+                # Check FORMAT for CN/CNV
+                try:
+                    fmt = variant.FORMAT
+                    if fmt is None or (hasattr(fmt, "size") and fmt.size == 0):
+                        fmt = ""
+                    else:
+                        fmt = str(fmt)
+                    if "CN" in fmt or "CNV" in fmt:
+                        cn_fmt = variant.format("CN") if "CN" in fmt else variant.format("CNV")
+                        if cn_fmt is not None and cn_fmt.size > 0:
+                            cn = int(cn_fmt.flat[0])
+                            gene = _parse_info_gene(str(info)) or gene_at_position(chrom, pos)
+                            if gene == "CYP2D6":
+                                result.cnv_by_gene["CYP2D6"] = CNVResult(
+                                    gene="CYP2D6", copy_number=cn, confidence="explicit"
+                                )
+                except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+                    pass
+
+                # Get genotype - Scenario 5
+                genotype_str = None
+                if hasattr(variant, "genotypes") and variant.genotypes is not None and len(variant.genotypes) > 0:
+                    gt = variant.genotypes[0]
+                    if gt is not None and len(gt) >= 2:
+                        a1, a2 = gt[0], gt[1]
+                        if a1 is not None and a2 is not None:
+                            genotype_str = f"{a1}/{a2}"
+                if not genotype_str and hasattr(variant, "gt_bases"):
+                    gb = variant.gt_bases
+                    if gb is not None and (hasattr(gb, "size") and gb.size > 0 or len(gb) > 0):
+                        genotype_str = str(gb[0]).replace("|", "/")
+
+                # Get RSID - Scenario 1 vs 2
+                rsid = _parse_info_rs(str(info))
+                if not rsid:
+                    rsid = _extract_rsid_from_id(_safe_scalar(variant.ID))
+                if not rsid:
+                    rsid = get_rsid_by_position(chrom, pos)
+                    if rsid:
+                        position_based_count += 1
+
+                gene_from_info = _parse_info_gene(str(info))
+                gene = gene_from_info or gene_at_position(chrom, pos)
+
+                if gene_from_info or (rsid and rsid in PGX_VARIANTS):
+                    has_info_annotations = True
+
+                if not gene:
+                    continue
+
+                if gene not in result.variants_by_gene:
+                    result.variants_by_gene[gene] = []
+
+                # Scenario 3: Multi-allelic - check each alt
+                for alt in (alts if (alts is not None and len(alts) > 0) else ["."]):
+                    if rsid and rsid in PGX_VARIANTS:
+                        info_map = PGX_VARIANTS[rsid]
+                        if (rsid, gene) not in seen_rsids:
+                            seen_rsids.add((rsid, gene))
+                            result.variants_by_gene[gene].append(
+                                ParsedVariant(
+                                    rsid=rsid,
+                                    gene=gene,
+                                    allele=info_map["allele"],
+                                    function=info_map["function"],
+                                    chrom=chrom,
+                                    pos=pos,
+                                    ref=ref,
+                                    alt=alt,
+                                    genotype=genotype_str,
+                                    source="info" if (gene_from_info or rsid in PGX_VARIANTS) else "position",
+                                )
                             )
-            except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-                pass
-
-            # Get genotype - Scenario 5
-            genotype_str = None
-            if hasattr(variant, "genotypes") and variant.genotypes is not None and len(variant.genotypes) > 0:
-                gt = variant.genotypes[0]
-                if gt is not None and len(gt) >= 2:
-                    a1, a2 = gt[0], gt[1]
-                    if a1 is not None and a2 is not None:
-                        genotype_str = f"{a1}/{a2}"
-            if not genotype_str and hasattr(variant, "gt_bases") and variant.gt_bases:
-                genotype_str = str(variant.gt_bases[0]).replace("|", "/")
-
-            # Get RSID - Scenario 1 vs 2
-            rsid = _parse_info_rs(str(info))
-            if not rsid:
-                rsid = _extract_rsid_from_id(str(variant.ID or ""))
-            if not rsid:
-                rsid = get_rsid_by_position(chrom, pos)
-                if rsid:
-                    position_based_count += 1
-
-            gene_from_info = _parse_info_gene(str(info))
-            gene = gene_from_info or gene_at_position(chrom, pos)
-
-            if gene_from_info or (rsid and rsid in PGX_VARIANTS):
-                has_info_annotations = True
-
-            if not gene:
-                continue
-
-            if gene not in result.variants_by_gene:
-                result.variants_by_gene[gene] = []
-
-            # Scenario 3: Multi-allelic - check each alt
-            for alt in (alts if alts else ["."]):
-                if rsid and rsid in PGX_VARIANTS:
-                    info_map = PGX_VARIANTS[rsid]
-                    if (rsid, gene) not in seen_rsids:
-                        seen_rsids.add((rsid, gene))
-                        result.variants_by_gene[gene].append(
-                            ParsedVariant(
-                                rsid=rsid,
-                                gene=gene,
-                                allele=info_map["allele"],
-                                function=info_map["function"],
-                                chrom=chrom,
-                                pos=pos,
-                                ref=ref,
-                                alt=alt,
-                                genotype=genotype_str,
-                                source="info" if (gene_from_info or rsid in PGX_VARIANTS) else "position",
+                    elif gene:
+                        pos_key = (f"{chrom}:{pos}", gene)
+                        if pos_key not in seen_rsids:
+                            seen_rsids.add(pos_key)
+                            result.variants_by_gene[gene].append(
+                                ParsedVariant(
+                                    rsid=rsid or f"{chrom}:{pos}",
+                                    gene=gene,
+                                    allele="?",
+                                    function="Unknown",
+                                    chrom=chrom,
+                                    pos=pos,
+                                    ref=ref,
+                                    alt=alt,
+                                    genotype=genotype_str,
+                                    source="position",
+                                )
                             )
-                        )
-                elif gene:
-                    pos_key = (f"{chrom}:{pos}", gene)
-                    if pos_key not in seen_rsids:
-                        seen_rsids.add(pos_key)
-                        result.variants_by_gene[gene].append(
-                            ParsedVariant(
-                                rsid=rsid or f"{chrom}:{pos}",
-                                gene=gene,
-                                allele="?",
-                                function="Unknown",
-                                chrom=chrom,
-                                pos=pos,
-                                ref=ref,
-                                alt=alt,
-                                genotype=genotype_str,
-                                source="position",
-                            )
-                        )
-                        result.annotation_completeness = "partial"
+                            result.annotation_completeness = "partial"
+            except (ValueError, TypeError) as e:
+                if "ambiguous" in str(e) or "truth value" in str(e).lower():
+                    logger.debug("Skipping variant due to numpy array: %s", e)
+                else:
+                    raise
 
         vcf.close()
 
