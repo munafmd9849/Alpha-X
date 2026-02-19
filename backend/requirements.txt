@@ -1,0 +1,36 @@
+# PharmaGuard Backend - Production Dependencies
+# Python 3.11+
+
+# Web Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+
+# Data Validation & Parsing
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# VCF Parsing (streaming, memory-efficient)
+cyvcf2>=0.30.22
+
+# HTTP & Async
+httpx==0.26.0
+python-multipart==0.0.9
+
+# LLM Integration
+openai==1.12.0
+anthropic==0.18.1
+
+# Utilities
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.4
+
+# CORS
+starlette==0.36.3
+
+# Rate Limiting
+slowapi==0.1.9

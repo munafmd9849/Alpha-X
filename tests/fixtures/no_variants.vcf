@@ -1,0 +1,6 @@
+##fileformat=VCFv4.2
+##source=PharmaGuard Test
+##reference=GRCh37
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE1
+1	1000	.	A	G	30	PASS	.	GT	0/0
+2	2000	.	T	C	30	PASS	.	GT	0/0
