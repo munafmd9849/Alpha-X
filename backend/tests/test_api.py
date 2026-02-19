@@ -162,3 +162,26 @@ def test_analyze_tpmt_poor():
     data = r.json()
     assert data["results"][0]["risk_assessment"]["risk_label"] == "Toxic"
     assert data["results"][0]["risk_assessment"]["severity"] == "critical"
+
+
+def test_analyze_test_patient():
+    """TEST: Multi-gene test patient - CYP2C19*2/*3, CYP2D6*4, SLCO1B1*5, TPMT*3A, DPYD*2A, CYP2C9*2/*3."""
+    vcf = (FIXTURES / "test_patient.vcf").read_bytes()
+    r = client.post(
+        "/analyze",
+        files={"file": ("test_patient.vcf", vcf, "text/plain")},
+        data={"drugs": "CODEINE,CLOPIDOGREL,WARFARIN,SIMVASTATIN,AZATHIOPRINE,FLUOROURACIL"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["results"]) == 6
+
+    by_drug = {r["drug"]: r for r in data["results"]}
+    assert by_drug["CODEINE"]["risk_assessment"]["risk_label"] == "Toxic"
+    assert by_drug["CODEINE"]["risk_assessment"]["severity"] == "high"
+    assert by_drug["CLOPIDOGREL"]["risk_assessment"]["risk_label"] == "Ineffective"
+    assert by_drug["WARFARIN"]["risk_assessment"]["risk_label"] == "Adjust Dosage"
+    assert by_drug["SIMVASTATIN"]["risk_assessment"]["risk_label"] == "Adjust Dosage"
+    assert by_drug["AZATHIOPRINE"]["risk_assessment"]["risk_label"] == "Adjust Dosage"
+    assert by_drug["FLUOROURACIL"]["risk_assessment"]["risk_label"] == "Toxic"
+    assert by_drug["FLUOROURACIL"]["risk_assessment"]["severity"] == "critical"

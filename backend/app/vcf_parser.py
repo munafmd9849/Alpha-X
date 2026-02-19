@@ -153,6 +153,31 @@ def _safe_scalar(obj, default: str = "") -> str:
     return str(obj)
 
 
+def _safe_empty(obj) -> bool:
+    """Safely check if object is None or empty (size==0), never using numpy truth value."""
+    if obj is None:
+        return True
+    try:
+        if hasattr(obj, "size"):
+            sz = getattr(obj, "size", -1)
+            return int(sz) == 0
+    except (ValueError, TypeError):
+        pass
+    return False
+
+
+def _info_to_str(info) -> str:
+    """Convert INFO to parseable string (KEY=val;...), safely handling numpy values."""
+    if not info:
+        return ""
+    try:
+        if isinstance(info, dict):
+            return ";".join(f"{k}={_safe_scalar(v)}" for k, v in info.items())
+        return str(info)
+    except (ValueError, TypeError):
+        return ""
+
+
 def _decompress_if_gzipped(content: bytes) -> bytes:
     """Decompress gzipped content."""
     if len(content) >= 2 and content[:2] == b"\x1f\x8b":
@@ -271,21 +296,22 @@ def parse_vcf(
                     alts = [str(a) for a in alts_raw] if len(alts_raw) > 0 else []
                 else:
                     alts = [str(alts_raw)] if not (hasattr(alts_raw, "size") and getattr(alts_raw, "size", 1) == 0) else []
-                info = variant.INFO
-                if info is None or (hasattr(info, "size") and info.size == 0):
+                info_raw = variant.INFO
+                if _safe_empty(info_raw):
                     info = {}
-
-                # Scenario 4: Structural variants - SVTYPE, CN, CNV in INFO
-                svtype = info.get("SVTYPE")
-                cn_val = info.get("CN")
-                if cn_val is None or (hasattr(cn_val, "size") and cn_val.size == 0):
-                    cn_val = info.get("CNV")
-                try:
-                    _has_cn = cn_val is not None and not (hasattr(cn_val, "size") and cn_val.size == 0)
-                    _has_sv = svtype is not None and not (hasattr(svtype, "size") and svtype.size == 0)
-                except (ValueError, TypeError):
-                    _has_cn = cn_val is not None
-                    _has_sv = svtype is not None
+                    svtype = None
+                    cn_val = None
+                else:
+                    try:
+                        info = dict(info_raw) if info_raw is not None else {}
+                    except (ValueError, TypeError, AttributeError):
+                        info = {}
+                    svtype = info.get("SVTYPE", None) if info else None
+                    cn_val = info.get("CN", None) if info else None
+                    if _safe_empty(cn_val):
+                        cn_val = info.get("CNV", None) if info else None
+                _has_cn = not _safe_empty(cn_val)
+                _has_sv = not _safe_empty(svtype)
                 if _has_cn and (_has_sv or gene_at_position(chrom, pos) == "CYP2D6"):
                     cn = int(cn_val) if isinstance(cn_val, (int, float)) else 0
                     result.cnv_by_gene["CYP2D6"] = CNVResult(
@@ -294,16 +320,13 @@ def parse_vcf(
 
                 # Check FORMAT for CN/CNV
                 try:
-                    fmt = variant.FORMAT
-                    if fmt is None or (hasattr(fmt, "size") and fmt.size == 0):
-                        fmt = ""
-                    else:
-                        fmt = str(fmt)
+                    fmt_raw = variant.FORMAT
+                    fmt = "" if _safe_empty(fmt_raw) else _safe_scalar(fmt_raw)
                     if "CN" in fmt or "CNV" in fmt:
                         cn_fmt = variant.format("CN") if "CN" in fmt else variant.format("CNV")
                         if cn_fmt is not None and cn_fmt.size > 0:
                             cn = int(cn_fmt.flat[0])
-                            gene = _parse_info_gene(str(info)) or gene_at_position(chrom, pos)
+                            gene = _parse_info_gene(_info_to_str(info)) or gene_at_position(chrom, pos)
                             if gene == "CYP2D6":
                                 result.cnv_by_gene["CYP2D6"] = CNVResult(
                                     gene="CYP2D6", copy_number=cn, confidence="explicit"
@@ -321,11 +344,11 @@ def parse_vcf(
                             genotype_str = f"{a1}/{a2}"
                 if not genotype_str and hasattr(variant, "gt_bases"):
                     gb = variant.gt_bases
-                    if gb is not None and (hasattr(gb, "size") and gb.size > 0 or len(gb) > 0):
-                        genotype_str = str(gb[0]).replace("|", "/")
+                    if gb is not None and not _safe_empty(gb):
+                        genotype_str = _safe_scalar(gb[0] if hasattr(gb, "__getitem__") else gb).replace("|", "/")
 
                 # Get RSID - Scenario 1 vs 2
-                rsid = _parse_info_rs(str(info))
+                rsid = _parse_info_rs(_info_to_str(info))
                 if not rsid:
                     rsid = _extract_rsid_from_id(_safe_scalar(variant.ID))
                 if not rsid:
@@ -333,7 +356,7 @@ def parse_vcf(
                     if rsid:
                         position_based_count += 1
 
-                gene_from_info = _parse_info_gene(str(info))
+                gene_from_info = _parse_info_gene(_info_to_str(info))
                 gene = gene_from_info or gene_at_position(chrom, pos)
 
                 if gene_from_info or (rsid and rsid in PGX_VARIANTS):
@@ -384,8 +407,9 @@ def parse_vcf(
                                 )
                             )
                             result.annotation_completeness = "partial"
-            except (ValueError, TypeError) as e:
-                if "ambiguous" in str(e) or "truth value" in str(e).lower():
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "ambiguous" in err_msg or "truth value" in err_msg:
                     logger.debug("Skipping variant due to numpy array: %s", e)
                 else:
                     raise
