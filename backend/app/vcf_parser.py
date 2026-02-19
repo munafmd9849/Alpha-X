@@ -139,60 +139,56 @@ def _normalize_chrom(chrom: str) -> str:
     return chrom
 
 
+def _decompress_if_gzipped(content: bytes) -> bytes:
+    """Decompress gzipped content."""
+    if len(content) >= 2 and content[:2] == b"\x1f\x8b":
+        import gzip
+        try:
+            return gzip.decompress(content)
+        except Exception:
+            return content
+    return content
+
+
 def validate_vcf_file(file_path: str, content: Optional[bytes] = None) -> Optional[Tuple[str, str]]:
     """Validate VCF file structure. Returns (error_code, message) or None if valid."""
     try:
-        lines = []
         if content:
+            content = _decompress_if_gzipped(content)
             text = content.decode("utf-8", errors="replace")
-            lines = text.split("\n")[:500]  # Check first 500 lines
+            lines = [l.strip().strip("\r") for l in text.split("\n")[:500] if l.strip()]
         else:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                for i, line in enumerate(f):
-                    if i >= 500:
-                        break
-                    lines.append(line)
+            with open(file_path, "rb") as f:
+                raw = f.read()
+            raw = _decompress_if_gzipped(raw)
+            text = raw.decode("utf-8", errors="replace")
+            lines = [l.strip().strip("\r") for l in text.split("\n")[:500] if l.strip()]
 
-        has_format = False
-        has_header = False
-        col_count = 0
+        has_format = any("##fileformat" in l for l in lines)
+        has_header = any(l.upper().startswith("#CHROM") for l in lines)
+        col_count = 8
         data_line_count = 0
 
         for line in lines:
-            line = line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 continue
-            if line.startswith("##fileformat"):
-                has_format = True
-                continue
-            if line.startswith("#CHROM") or line.startswith("CHROM"):
-                has_header = True
-                parts = line.split("\t")
-                col_count = len(parts)
-                continue
-            if has_header and not line.startswith("#"):
-                data_line_count += 1
-                if col_count == 0:
-                    parts = line.split("\t")
-                    col_count = len(parts)
+            parts = line.split("\t")
+            col_count = max(col_count, len(parts))
+            data_line_count += 1
+            if data_line_count >= 1:
                 break
 
-        if not has_format:
-            return ("VCF_001", VCF_ERROR_CODES["VCF_001"])
+        if not has_format and not has_header:
+            return ("VCF_001", "Missing VCF header. File must start with ##fileformat or #CHROM line.")
         if data_line_count == 0:
-            # Need to count data lines
-            for line in lines:
-                if line and not line.startswith("#") and has_header:
-                    data_line_count += 1
-            if data_line_count == 0:
-                return ("VCF_002", VCF_ERROR_CODES["VCF_002"])
+            return ("VCF_002", "No variant data lines found. VCF must contain at least one variant row.")
         if col_count < 8:
-            return ("VCF_003", VCF_ERROR_CODES["VCF_003"])
+            return ("VCF_003", f"Invalid format: need at least 8 columns (CHROM,POS,ID,REF,ALT,QUAL,FILTER,INFO), found {col_count}.")
 
         return None
     except Exception as e:
         logger.exception("VCF validation failed")
-        return ("VCF_005", f"{VCF_ERROR_CODES['VCF_005']}: {str(e)}")
+        return ("VCF_005", f"Parse error: {str(e)}")
 
 
 def parse_vcf(

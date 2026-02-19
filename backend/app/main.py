@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.database import SUPPORTED_DRUGS
 from app.models import AnalysisResponse
 from app.service import analyze
-from app.vcf_parser import validate_vcf_file
+from app.vcf_parser import validate_vcf_file, _decompress_if_gzipped
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -172,17 +172,16 @@ async def analyze_vcf(
             detail="File exceeds 5MB limit. Please provide a smaller VCF file.",
         )
 
-    # Validate VCF
+    # Validate VCF (handles gzip, returns specific error)
     err = validate_vcf_file("", content)
     if err:
         code, msg = err
-        raise HTTPException(
-            status_code=400,
-            detail="We couldn't parse this VCF file. Please ensure it's a valid VCF v4.2 format.",
-        )
+        raise HTTPException(status_code=400, detail=msg)
 
-    # Write to temp file for cyvcf2
-    with tempfile.NamedTemporaryFile(suffix=".vcf", delete=False) as tf:
+    # Decompress if gzipped, write temp file (cyvcf2 needs .vcf or .vcf.gz)
+    content = _decompress_if_gzipped(content)
+    suffix = ".vcf"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
         tf.write(content)
         tf.flush()
         path = tf.name
