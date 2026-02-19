@@ -1,0 +1,21 @@
+# Git
+.git
+.gitignore
+
+# Frontend (not needed for backend image)
+frontend
+
+# Tests
+tests
+*.pyc
+__pycache__
+.pytest_cache
+
+# Env
+.env
+.venv
+venv
+
+# Docs
+*.md
+LICENSE
