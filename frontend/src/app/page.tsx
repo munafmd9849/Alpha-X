@@ -83,11 +83,15 @@ export default function UploadPage() {
       formData.append("file", file);
       formData.append("drugs", drugs.map((d) => d.toUpperCase()).join(","));
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://alpha-x-84p9.onrender.com";
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
       const res = await fetch(`${apiUrl}/analyze`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -101,6 +105,7 @@ export default function UploadPage() {
       if (msg.includes("5MB")) setError("File exceeds 5MB limit. Please provide a smaller VCF file.");
       else if (msg.includes("parse") || msg.includes("VCF")) setError("We couldn't parse this VCF file. Please ensure it's a valid VCF v4.2 format.");
       else if (msg.includes("support") || msg.includes("contact")) setError("Analysis failed. Please try again. If problem persists, contact support.");
+      else if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort")) setError("Failed to connect to server. The backend may be waking up (Render free tier)—please wait 1–2 minutes and try again.");
       else setError(msg);
     } finally {
       setLoading(false);

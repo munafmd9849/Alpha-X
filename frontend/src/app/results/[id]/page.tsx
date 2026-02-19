@@ -238,7 +238,7 @@ export default function ResultsPage() {
               PDF Report
             </button>
             <a
-              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/audit/export`}
+              href={`${process.env.NEXT_PUBLIC_API_URL || "https://alpha-x-84p9.onrender.com"}/audit/export`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"

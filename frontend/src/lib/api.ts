@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Env var for Vercel; fallback to production backend (use .env.local with http://localhost:8000 for local dev)
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://alpha-x-84p9.onrender.com";
 
 export interface RiskAssessment {
   risk_label: "Safe" | "Adjust Dosage" | "Toxic" | "Ineffective" | "Unknown";
