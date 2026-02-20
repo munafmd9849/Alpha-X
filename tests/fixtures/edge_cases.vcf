@@ -1,0 +1,69 @@
+##fileformat=VCFv4.2
+##fileDate=20260220
+##source=EdgeCase_PGx_TestGenerator
+##reference=GRCh38.p13
+##phasing=partial
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=STAR,Number=1,Type=String,Description="Star allele designation">
+##INFO=<ID=NOTE,Number=.,Type=String,Description="Free text annotation">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	PATIENT_001	PATIENT_002
+
+############################
+# 1) Normal SNV
+chr10	96702047	rs1057910	A	C	99	PASS	GENE=CYP2C9;STAR=*3	GT:DP:GQ:AD	0/1:60:99:30,30	1/1:55:99:0,55
+
+############################
+# 2) Missing values
+chr1	97515865	rs1801265	T	C	.	PASS	GENE=DPYD;STAR=*5	GT:DP:GQ:AD	./.:.:.:.	./.:.:.:.
+
+############################
+# 3) Multi-allelic variant
+chr6	18130918	rs1800584	G	A,T	99	PASS	GENE=TPMT;STAR=*3C	GT:DP:GQ:AD	1/2:80:99:10,35,35	0/2:90:99:20,70
+
+############################
+# 4) Structural variant
+chr22	42127941	rsTESTDEL	N	<DEL>	60	PASS	SVTYPE=DEL;END=42128000;GENE=CYP2D6	GT:DP:GQ	0/1:40:80	1/1:50:99
+
+############################
+# 5) Phased genotype
+chr12	21176804	rs4149056	T	C	99	PASS	GENE=SLCO1B1	GT:DP:GQ:AD	0|1:70:99:35,35	1|1:80:99:0,80
+
+############################
+# 6) Low quality variant
+chr10	94781859	rs4244285	G	A	20	LowQual	GENE=CYP2C19	GT:DP:GQ:AD	0/1:10:15:5,5	0/0:8:12:8,0
+
+############################
+# 7) Large INFO field
+chr22	42523805	rs1065852	G	A	99	PASS	GENE=CYP2D6;STAR=*4;NOTE="Very long annotation string with spaces and symbols = + - ; , : / !!!"	GT:DP:GQ:AD	0/1:78:99:39,39	0/0:70:99:70,0
+
+############################
+# 8) Duplicate position
+chr10	96702047	rs1057910_DUP	A	C	99	PASS	GENE=CYP2C9	GT:DP:GQ	1/1:60:99	0/1:65:99
+
+############################
+# 9) Mitochondrial chromosome
+chrM	3307	rsMTEST	A	G	99	PASS	GENE=MT-ND1	GT:DP:GQ	1/1:100:99	0/1:90:99
+
+############################
+# 10) Very large depth values
+chr1	97450058	rs3918290	C	T	99	PASS	GENE=DPYD	GT:DP:GQ:AD	0/1:99999:99:50000,49999	1/1:88888:99:0,88888
+
+############################
+# 11) Unicode annotation
+chr1	97450059	rsUNICODE	C	T	99	PASS	GENE=DPYD;NOTE=患者特异性变异	GT:DP:GQ	0/1:50:99	0/0:40:99
+
+############################
+# 12) Indel variant
+chr6	18130919	rsINDEL	G	GA	99	PASS	GENE=TPMT	GT:DP:GQ:AD	0/1:40:99:20,20	1/1:60:99:0,60
+
+############################
+# 13) Corrupted line (intentional)
+chr10	94781859 rs4244285 G A 99 PASS BROKEN_LINE
+
+############################
+# 14) Non-standard contig
+chrUn_gl000220	1000	rsRANDOM	A	T	99	PASS	GENE=UNKNOWN	GT:DP:GQ	0/1:30:99	0/0:25:99

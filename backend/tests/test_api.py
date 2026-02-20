@@ -164,6 +164,23 @@ def test_analyze_tpmt_poor():
     assert data["results"][0]["risk_assessment"]["severity"] == "critical"
 
 
+def test_analyze_edge_cases():
+    """Edge cases: multi-allelic, phased, SV, missing GT, unicode, etc."""
+    vcf = (FIXTURES / "edge_cases.vcf").read_bytes()
+    r = client.post(
+        "/analyze",
+        files={"file": ("edge_cases.vcf", vcf, "text/plain")},
+        data={"drugs": "CODEINE,CLOPIDOGREL,WARFARIN,SIMVASTATIN,AZATHIOPRINE,FLUOROURACIL"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["results"]) == 6
+    # Key checks: parses without error, returns risk for all drugs
+    by_drug = {x["drug"]: x for x in data["results"]}
+    assert "CODEINE" in by_drug and by_drug["CODEINE"]["risk_assessment"]["risk_label"] in ("Toxic", "Safe", "Adjust Dosage", "Unknown")
+    assert "FLUOROURACIL" in by_drug
+
+
 def test_analyze_test_patient():
     """TEST: Multi-gene test patient - CYP2C19*2/*3, CYP2D6*4, SLCO1B1*5, TPMT*3A, DPYD*2A, CYP2C9*2/*3."""
     vcf = (FIXTURES / "test_patient.vcf").read_bytes()
